@@ -7,7 +7,6 @@ import { telegramRouter } from "./routes/telegram.ts";
 const app = new Application();
 const router = new Router();
 
-// Middleware CORS
 app.use(async (ctx, next) => {
   ctx.response.headers.set("Access-Control-Allow-Origin", "*");
   ctx.response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -19,20 +18,16 @@ app.use(async (ctx, next) => {
   await next();
 });
 
-// Rotte API
 router.use("/api/admin", adminRouter.routes(), adminRouter.allowedMethods());
 router.use("/api/analyze", analyzeRouter.routes(), analyzeRouter.allowedMethods());
 router.use("/api/history", historyRouter.routes(), historyRouter.allowedMethods());
 router.use("/api/telegram", telegramRouter.routes(), telegramRouter.allowedMethods());
 
-// Health check
 router.get("/", (ctx) => {
-  ctx.response.body = { status: "ok" };
+  ctx.response.body = { status: "ok", message: "ScioperoScan AI backend attivo" };
 });
 
 app.use(router.routes());
 app.use(router.allowedMethods());
 
-const port = parseInt(Deno.env.get("PORT") || "8000");
-console.log(`Server in ascolto sulla porta ${port}`);
-await app.listen({ port });
+Deno.serve(app.fetch.bind(app));
