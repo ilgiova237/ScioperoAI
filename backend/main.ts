@@ -1,1 +1,38 @@
-﻿import { Application, Router } from "oak";\nimport { adminRouter } from "./routes/admin.ts";\nimport { analyzeRouter } from "./routes/analyze.ts";\nimport { historyRouter } from "./routes/history.ts";\nimport { telegramRouter } from "./routes/telegram.ts";\n\nconst app = new Application();\nconst router = new Router();\n\n// Middleware CORS\napp.use(async (ctx, next) => {\n  ctx.response.headers.set("Access-Control-Allow-Origin", "*");\n  ctx.response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");\n  ctx.response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");\n  if (ctx.request.method === "OPTIONS") {\n    ctx.response.status = 204;\n    return;\n  }\n  await next();\n});\n\n// Rotte API\nrouter.use("/api/admin", adminRouter.routes(), adminRouter.allowedMethods());\nrouter.use("/api/analyze", analyzeRouter.routes(), analyzeRouter.allowedMethods());\nrouter.use("/api/history", historyRouter.routes(), historyRouter.allowedMethods());\nrouter.use("/api/telegram", telegramRouter.routes(), telegramRouter.allowedMethods());\n\n// Health check\nrouter.get("/", (ctx) => {\n  ctx.response.body = { status: "ok" };\n});\n\napp.use(router.routes());\napp.use(router.allowedMethods());\n\nconst port = parseInt(Deno.env.get("PORT") || "8000");\nconsole.log(`Server in ascolto sulla porta ${port}`);\nawait app.listen({ port });\n
+import { Application, Router } from "oak";
+import { adminRouter } from "./routes/admin.ts";
+import { analyzeRouter } from "./routes/analyze.ts";
+import { historyRouter } from "./routes/history.ts";
+import { telegramRouter } from "./routes/telegram.ts";
+
+const app = new Application();
+const router = new Router();
+
+// Middleware CORS
+app.use(async (ctx, next) => {
+  ctx.response.headers.set("Access-Control-Allow-Origin", "*");
+  ctx.response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  ctx.response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (ctx.request.method === "OPTIONS") {
+    ctx.response.status = 204;
+    return;
+  }
+  await next();
+});
+
+// Rotte API
+router.use("/api/admin", adminRouter.routes(), adminRouter.allowedMethods());
+router.use("/api/analyze", analyzeRouter.routes(), analyzeRouter.allowedMethods());
+router.use("/api/history", historyRouter.routes(), historyRouter.allowedMethods());
+router.use("/api/telegram", telegramRouter.routes(), telegramRouter.allowedMethods());
+
+// Health check
+router.get("/", (ctx) => {
+  ctx.response.body = { status: "ok" };
+});
+
+app.use(router.routes());
+app.use(router.allowedMethods());
+
+const port = parseInt(Deno.env.get("PORT") || "8000");
+console.log(`Server in ascolto sulla porta ${port}`);
+await app.listen({ port });
