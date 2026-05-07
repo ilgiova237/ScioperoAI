@@ -1,16 +1,9 @@
 import { Application, Router } from "oak";
-import { adminRouter } from "./routes/admin.ts";
-import { analyzeRouter } from "./routes/analyze.ts";
-import { historyRouter } from "./routes/history.ts";
-import { telegramRouter } from "./routes/telegram.ts";
 
 const app = new Application();
 const router = new Router();
 
-// ─────────────────────────────────────────────
-// MIDDLEWARE DI DEBUG GLOBALE (deve essere il primo)
-// Logga OGNI richiesta e OGNI errore
-// ─────────────────────────────────────────────
+// Middleware di debug globale
 app.use(async (ctx, next) => {
   const start = Date.now();
   console.log(`[DEBUG] --> ${ctx.request.method} ${ctx.request.url.pathname}`);
@@ -20,8 +13,8 @@ app.use(async (ctx, next) => {
     console.log(`[DEBUG] <-- ${ctx.request.method} ${ctx.request.url.pathname} ${ctx.response.status} (${ms}ms)`);
   } catch (err) {
     const ms = Date.now() - start;
-    console.error(`[ERROR] ${ctx.request.method} ${ctx.request.url.pathname} dopo ${ms}ms:`, err.message || err);
-    console.error("[ERROR] Stack:", err.stack || "nessuno stack");
+    console.error(`[ERROR] ${ctx.request.method} ${ctx.request.url.pathname} dopo ${ms}ms:`, err.message);
+    console.error("[ERROR] Stack:", err.stack);
     ctx.response.status = 500;
     ctx.response.body = {
       error: "Internal Server Error",
@@ -31,9 +24,7 @@ app.use(async (ctx, next) => {
   }
 });
 
-// ─────────────────────────────────────────────
-// MIDDLEWARE CORS
-// ─────────────────────────────────────────────
+// CORS
 app.use(async (ctx, next) => {
   ctx.response.headers.set("Access-Control-Allow-Origin", "*");
   ctx.response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -45,9 +36,7 @@ app.use(async (ctx, next) => {
   await next();
 });
 
-// ─────────────────────────────────────────────
-// ENDPOINT DI DEBUG: verifica variabili d'ambiente
-// ─────────────────────────────────────────────
+// Endpoint di debug per variabili d'ambiente
 router.get("/debug/env", (ctx) => {
   ctx.response.body = {
     GEMINI_API_KEY_exists: Deno.env.has("GEMINI_API_KEY"),
@@ -55,33 +44,54 @@ router.get("/debug/env", (ctx) => {
     JWT_SECRET_exists: Deno.env.has("JWT_SECRET"),
     JWT_SECRET_length: Deno.env.get("JWT_SECRET")?.length || 0,
     PORT: Deno.env.get("PORT") || "non impostata",
-    DENO_REGION: Deno.env.get("DENO_REGION") || "sconosciuta",
   };
 });
 
-// ─────────────────────────────────────────────
-// ROTTE API PRINCIPALI (con debug interno)
-// ─────────────────────────────────────────────
-router.use("/api/admin", adminRouter.routes(), adminRouter.allowedMethods());
-router.use("/api/analyze", analyzeRouter.routes(), analyzeRouter.allowedMethods());
-router.use("/api/history", historyRouter.routes(), historyRouter.allowedMethods());
-router.use("/api/telegram", telegramRouter.routes(), telegramRouter.allowedMethods());
+// Endpoint di test per Gemini (senza KV, senza admin)
+router.post("/api/test-gemini", async (ctx) => {
+  const { text } = await ctx.request.body({ type: "json" }).value;
+  if (!text) {
+    ctx.response.status = 400;
+    ctx.response.body = { error: "Manca il testo" };
+    return;
+  }
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!apiKey) {
+    ctx.response.status = 500;
+    ctx.response.body = { error: "GEMINI_API_KEY non impostata" };
+    return;
+  }
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
+    const body = {
+      contents: [{ parts: [{ text: "Analizza questo testo di sciopero: " + text }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
+    };
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(`Errore API Gemini: ${err.error?.message || response.status}`);
+    }
+    const data = await response.json();
+    ctx.response.body = { analysis: data.candidates[0].content.parts[0].text };
+  } catch (e) {
+    ctx.response.status = 500;
+    ctx.response.body = { error: e.message };
+  }
+});
 
-// ─────────────────────────────────────────────
-// HEALTH CHECK
-// ─────────────────────────────────────────────
+// Health check
 router.get("/", (ctx) => {
-  ctx.response.body = {
-    status: "ok",
-    message: "ScioperoScan AI backend attivo",
-    timestamp: new Date().toISOString(),
-  };
+  ctx.response.body = { status: "ok", message: "ScioperoScan AI backend unificato" };
 });
 
 app.use(router.routes());
 app.use(router.allowedMethods());
 
-// Avvia il server
 const port = parseInt(Deno.env.get("PORT") || "8000");
-console.log(`[INFO] Server avviato sulla porta ${port}`);
+console.log(`Server unificato in ascolto sulla porta ${port}`);
 Deno.serve(app.handle.bind(app));
