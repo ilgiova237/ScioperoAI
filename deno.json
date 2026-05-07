@@ -1,14 +1,21 @@
-{
-  "tasks": {
-    "start": "deno run --allow-net --allow-env --allow-read --allow-write backend/main.ts"
-  },
-  "compilerOptions": {
-    "lib": ["dom", "deno.ns", "deno.unstable"]
-  },
-  "imports": {
-    "oak": "https://deno.land/x/oak@v12.6.1/mod.ts",
-    "oak/": "https://deno.land/x/oak@v12.6.1/",
-    "jwt": "https://deno.land/x/djwt@v3.0.1/mod.ts",
-    "crypto": "https://deno.land/std@0.208.0/crypto/mod.ts"
-  }
+﻿{
+    "tasks":  {
+                  "start":  "deno run --allow-net --allow-env --allow-read --allow-write backend/main.ts"
+              },
+    "compilerOptions":  {
+                            "lib":  [
+                                        "dom",
+                                        "deno.ns",
+                                        "deno.unstable"
+                                    ]
+                        },
+    "imports":  {
+                    "oak":  "https://deno.land/x/oak@v12.6.1/mod.ts",
+                    "oak/":  "https://deno.land/x/oak@v12.6.1/",
+                    "jwt":  "https://deno.land/x/djwt@v3.0.1/mod.ts",
+                    "crypto":  "https://deno.land/std@0.208.0/crypto/mod.ts"
+                },
+    "unstable":  [
+                     "kv"
+                 ]
 }
