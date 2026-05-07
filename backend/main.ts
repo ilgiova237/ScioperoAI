@@ -30,4 +30,4 @@ router.get("/", (ctx) => {
 app.use(router.routes());
 app.use(router.allowedMethods());
 
-Deno.serve(app.fetch.bind(app));
+Deno.serve(app.handle.bind(app));
