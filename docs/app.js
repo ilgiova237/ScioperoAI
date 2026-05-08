@@ -2,6 +2,7 @@ const API_BASE = 'https://sciopero-scan-ai.ilgiova237.deno.net/api';
 let currentAnalysis = null;
 let adminToken = null;
 
+// ── INIT ──────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     renderMainPage();
     registerServiceWorker();
@@ -36,9 +37,14 @@ function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
     const rawData = atob(base64);
-    return new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
+    const uint8Array = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) {
+        uint8Array[i] = rawData.charCodeAt(i);
+    }
+    return uint8Array;
 }
 
+// ── RENDER ────────────────────────────────
 function renderMainPage() {
     const main = document.getElementById('mainContent');
     if (!main) return;
@@ -97,6 +103,7 @@ function setupUploadListeners() {
     });
 }
 
+// ── GLOBAL FUNCTIONS ──────────────────────
 function triggerFileUpload() { document.getElementById('fileInput')?.click(); }
 function togglePasteArea() {
     const area = document.getElementById('pasteArea');
@@ -109,6 +116,7 @@ function analyzePastedText() {
     submitAnalysis(text);
 }
 
+// ── FILE HANDLING ─────────────────────────
 async function handleFile(file) {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
     const valid = ['.pdf', '.docx', '.doc', '.txt'];
@@ -175,6 +183,7 @@ async function doOCR(buf, numPages) {
     return text;
 }
 
+// ── SUBMIT ANALYSIS ──────────────────────
 async function submitAnalysis(text) {
     document.getElementById('progressCard')?.classList.add('active');
     document.getElementById('resultsCard')?.classList.remove('active');
@@ -192,6 +201,7 @@ async function submitAnalysis(text) {
     } catch(e) { showToast('❌ '+e.message); resetUI(); }
 }
 
+// ── DISPLAY ──────────────────────────────
 function displayResults(data) {
     document.getElementById('progressCard')?.classList.remove('active');
     document.getElementById('resultsCard')?.classList.add('active');
@@ -253,6 +263,7 @@ function downloadResults() {
     a.click();
 }
 
+// ── PROGRESS ─────────────────────────────
 function setProgress(pct, msg) {
     const bar = document.getElementById('progressBar');
     const msgEl = document.getElementById('progressMessage');
@@ -267,6 +278,7 @@ function resetUI() {
     setProgress(0,'');
 }
 
+// ── ADMIN ────────────────────────────────
 function openAdminLogin() {
     const pwd = prompt('🔐 Inserisci password amministratore:');
     if (!pwd) return;
@@ -316,6 +328,7 @@ function saveAdminSettings() {
     });
 }
 
+// ── HISTORY ──────────────────────────────
 function openHistory() {
     fetch(API_BASE + '/history').then(r => r.json()).then(records => {
         const modal = document.createElement('div');
@@ -358,6 +371,7 @@ async function exportHistory() {
     showToast('📤 Storico esportato');
 }
 
+// ── TOAST ────────────────────────────────
 function showToast(msg) {
     let container = document.getElementById('toastContainer');
     if (!container) {
