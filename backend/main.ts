@@ -63,7 +63,7 @@ async function handler(req: Request): Promise<Response> {
       // Chiamata a Gemini
       const prompt = `Sei un analista sindacale esperto del comparto Istruzione italiano. Analizza il seguente documento di sciopero e produci un report dettagliato con: probabilità di successo, punti di forza, criticità, base giuridica, confronto storico, consigli tattici.\n\nDocumento:\n${text}`;
       const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
