@@ -1,118 +1,92 @@
-// ScioperoScan AI – Backend con Deno.serve (nessuna dipendenza esterna)
-const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || "";
-const JWT_SECRET = Deno.env.get("JWT_SECRET") || "default-secret";
+const API_KEY = Deno.env.get("GEMINI_API_KEY") || "";
+const MODEL = "mistralai/mistral-7b-instruct"; // gratuito su OpenRouter
 
-// ========================
-// ROUTER MANUALE
-// ========================
 async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method;
 
-  // Log di debug
-  console.log(`[${method}] ${path}`);
-
-  // CORS headers per tutte le risposte
   const headers = new Headers({
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   });
 
-  // Gestione preflight CORS
   if (method === "OPTIONS") {
     return new Response(null, { status: 204, headers });
   }
 
-  // Helper per risposte JSON
   const json = (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), { status, headers: { ...Object.fromEntries(headers.entries()), "Content-Type": "application/json" } });
 
   try {
-    // --------------------------
-    // ROTTE
-    // --------------------------
-
     // Health check
     if (path === "/" && method === "GET") {
-      return json({ status: "ok", message: "ScioperoScan AI backend attivo", timestamp: new Date().toISOString() });
+      return json({ status: "ok", message: "ScioperoScan AI backend attivo con OpenRouter" });
     }
 
-    // Debug variabili d'ambiente
+    // Debug
     if (path === "/debug/env" && method === "GET") {
-      return json({
-        GEMINI_API_KEY_exists: !!GEMINI_API_KEY,
-        GEMINI_API_KEY_length: GEMINI_API_KEY.length,
-        JWT_SECRET_exists: !!JWT_SECRET,
-        JWT_SECRET_length: JWT_SECRET.length,
-      });
+      return json({ API_KEY_exists: !!API_KEY, API_KEY_length: API_KEY.length });
     }
 
-    // Analisi documento (endpoint principale)
+    // Analisi documento
     if (path === "/api/analyze" && method === "POST") {
-      const body = await req.json();
-      const text = body.text || "";
+      const { text } = await req.json();
       if (!text || text.length < 50) {
         return json({ error: "Testo troppo corto" }, 400);
       }
-      if (!GEMINI_API_KEY) {
-        return json({ error: "API Key Gemini non configurata" }, 500);
+      if (!API_KEY) {
+        return json({ error: "API Key non configurata" }, 500);
       }
 
-      // Chiamata a Gemini
-      const prompt = `Sei un analista sindacale esperto del comparto Istruzione italiano. Analizza il seguente documento di sciopero e produci un report dettagliato con: probabilità di successo, punti di forza, criticità, base giuridica, confronto storico, consigli tattici.\n\nDocumento:\n${text}`;
-      const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
-          }),
-        }
-      );
-      if (!geminiRes.ok) {
-        const err = await geminiRes.json().catch(() => ({}));
-        throw new Error(`Errore API Gemini: ${err.error?.message || geminiRes.status}`);
+      const prompt = `Sei un analista sindacale esperto del comparto Istruzione italiano. Analizza il seguente documento di sciopero e produci un report dettagliato in italiano con: probabilità di successo (ALTA/MEDIA/BASSA), punti di forza, criticità, base giuridica, confronto storico, consigli tattici.\n\nDocumento:\n${text}`;
+
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${API_KEY}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://sciperoscan.pages.dev",
+          "X-Title": "ScioperoScan AI"
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.3,
+          max_tokens: 4096
+        })
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || `HTTP ${response.status}`);
       }
-      const geminiData = await geminiRes.json();
-      const analysis = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "Nessuna analisi prodotta.";
-      return json({ analysis, probability: "MEDIA" }); // La probabilità verrà calcolata dal frontend
+
+      const data = await response.json();
+      const analysis = data.choices?.[0]?.message?.content || "Nessuna analisi prodotta.";
+      return json({ analysis, probability: "MEDIA" });
     }
 
-    // Storico (semplice array in memoria, temporaneo)
+    // Storico (mock)
     if (path === "/api/history" && method === "GET") {
-      return json([]); // Per ora vuoto
+      return json([]);
     }
 
-    // Admin: verifica password (semplice)
+    // Admin verify
     if (path === "/api/admin/verify" && method === "POST") {
       const { password } = await req.json();
-      // Password temporanea: "sciopero2024" (hash simulato)
       if (password === "sciopero2024") {
-        return json({ token: "admin-token-temporaneo" });
+        return json({ token: "admin-token" });
       }
       return json({ error: "Password errata" }, 401);
     }
 
-    // Admin: salva impostazioni (solo API Key per ora)
+    // Admin settings (mock)
     if (path === "/api/admin/settings" && method === "PUT") {
-      // In un'implementazione reale useremmo KV, per ora logghiamo e basta
-      const body = await req.json();
-      console.log("Nuove impostazioni:", body);
       return json({ success: true });
     }
 
-    // Volantino (mock)
-    if (path === "/api/volantino" && method === "POST") {
-      const { analysis } = await req.json();
-      const volantino = `Compagne e compagni,\n\n${analysis?.substring(0, 500)}...\n\nUniamoci!`;
-      return json({ volantino });
-    }
-
-    // 404
     return json({ error: "Endpoint non trovato" }, 404);
 
   } catch (err) {
@@ -121,6 +95,4 @@ async function handler(req: Request): Promise<Response> {
   }
 }
 
-// Avvia il server
-console.log("Backend avviato con Deno.serve");
 Deno.serve(handler);
