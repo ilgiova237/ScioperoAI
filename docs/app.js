@@ -1,4 +1,4 @@
-const API_BASE = localStorage.getItem('api_base') || 'http://localhost:8000/api';
+const API_BASE = 'https://sciopero-scan-ai.ilgiova237.deno.net/api';
 let currentAnalysis = null;
 let adminToken = null;
 
