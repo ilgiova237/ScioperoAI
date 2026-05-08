@@ -2,7 +2,6 @@ const API_BASE = 'https://sciopero-scan-ai.ilgiova237.deno.net/api';
 let currentAnalysis = null;
 let adminToken = null;
 
-// ── INIT ──────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     renderMainPage();
     registerServiceWorker();
@@ -23,7 +22,7 @@ async function registerServiceWorker() {
                 applicationServerKey: urlBase64ToUint8Array(localStorage.getItem('vapid_public') || '')
             });
             if (sub) {
-                await fetch(`${API_BASE}/push/subscribe`, {
+                await fetch(API_BASE + '/push/subscribe', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(sub)
@@ -33,16 +32,16 @@ async function registerServiceWorker() {
     }
 }
 
-function urlBase64ToUint8Array(base64String: string) {
+function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
     const rawData = atob(base64);
     return new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
 }
 
-// ── RENDER ────────────────────────────────
 function renderMainPage() {
     const main = document.getElementById('mainContent');
+    if (!main) return;
     main.innerHTML = `
         <div class="hero">
             <h1>Carica il documento,<br>ottieni l'<span>analisi tattica</span></h1>
@@ -98,7 +97,6 @@ function setupUploadListeners() {
     });
 }
 
-// ── GLOBAL FUNCTIONS ──────────────────────
 function triggerFileUpload() { document.getElementById('fileInput')?.click(); }
 function togglePasteArea() {
     const area = document.getElementById('pasteArea');
@@ -111,10 +109,9 @@ function analyzePastedText() {
     submitAnalysis(text);
 }
 
-// ── FILE HANDLING ─────────────────────────
-async function handleFile(file: File) {
+async function handleFile(file) {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-    const valid = ['.pdf','.docx','.doc','.txt'];
+    const valid = ['.pdf', '.docx', '.doc', '.txt'];
     if (!valid.includes(ext)) { showToast('⚠️ Formato non supportato'); return; }
     if (file.size > 50*1024*1024) { showToast('⚠️ File troppo grande (max 50 MB)'); return; }
     
@@ -124,40 +121,52 @@ async function handleFile(file: File) {
     
     try {
         let text = '';
-        if (ext === '.txt') text = await file.text();
-        else if (ext === '.docx') {
+        if (ext === '.txt') {
+            text = await file.text();
+        } else if (ext === '.docx') {
             const buf = await file.arrayBuffer();
             const result = await mammoth.extractRawText({ arrayBuffer: buf });
             text = result.value;
         } else if (ext === '.pdf') {
             const buf = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-            for (let i=1; i<=pdf.numPages; i++) {
+            for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const content = await page.getTextContent();
-                text += content.items.map((it:any) => it.str).join(' ') + '\n';
+                text += content.items.map(it => it.str).join(' ') + '\n';
             }
-            if (text.trim().length < pdf.numPages*30) {
+            if (text.trim().length < pdf.numPages * 30) {
                 showToast('📷 PDF scansionato, avvio OCR...');
                 text = await doOCR(buf, pdf.numPages);
+            }
+        } else if (ext === '.doc') {
+            try {
+                const buf = await file.arrayBuffer();
+                const result = await mammoth.extractRawText({ arrayBuffer: buf });
+                text = result.value;
+            } catch {
+                showToast('⚠️ File .doc non supportato, convertilo in PDF/DOCX');
+                resetUI();
+                return;
             }
         }
         if (text.length < 30) { showToast('⚠️ Impossibile estrarre testo'); resetUI(); return; }
         setProgress(30, 'Testo estratto');
         submitAnalysis(text);
-    } catch(e) { showToast('❌ Errore: '+e); resetUI(); }
+    } catch(e) { showToast('❌ Errore: '+e.message); resetUI(); }
 }
 
-async function doOCR(buf: ArrayBuffer, numPages: number): Promise<string> {
+async function doOCR(buf, numPages) {
     const worker = await Tesseract.createWorker('ita');
     const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
     let text = '';
-    for (let i=1; i<=numPages; i++) {
+    for (let i = 1; i <= numPages; i++) {
         const page = await pdf.getPage(i);
         const viewport = page.getViewport({ scale: 2 });
         const canvas = document.createElement('canvas');
-        canvas.width = viewport.width; canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d')!;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
         await page.render({ canvasContext: ctx, viewport }).promise;
         const { data: { text: t } } = await worker.recognize(canvas);
         text += t + '\n';
@@ -166,13 +175,12 @@ async function doOCR(buf: ArrayBuffer, numPages: number): Promise<string> {
     return text;
 }
 
-// ── SUBMIT ANALYSIS ──────────────────────
-async function submitAnalysis(text: string) {
+async function submitAnalysis(text) {
     document.getElementById('progressCard')?.classList.add('active');
     document.getElementById('resultsCard')?.classList.remove('active');
     setProgress(40, 'Invio all\'AI...');
     try {
-        const res = await fetch(`${API_BASE}/analyze`, {
+        const res = await fetch(API_BASE + '/analyze', {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ text })
         });
@@ -184,69 +192,51 @@ async function submitAnalysis(text: string) {
     } catch(e) { showToast('❌ '+e.message); resetUI(); }
 }
 
-// ── DISPLAY ──────────────────────────────
-function displayResults(data: any) {
+function displayResults(data) {
     document.getElementById('progressCard')?.classList.remove('active');
-    const rc = document.getElementById('resultsCard');
-    rc?.classList.add('active');
-    
-    const banner = document.getElementById('alertBanner');
-    banner!.innerHTML = data.alert ? `<div class="alert-banner">⚠️ ${data.alert.message}</div>` : '';
-    
-    const badge = document.getElementById('resultBadge');
+    document.getElementById('resultsCard')?.classList.add('active');
+    document.getElementById('alertBanner').innerHTML = data.alert ? `<div class="alert-banner">⚠️ ${data.alert.message}</div>` : '';
     const prob = data.probability || 'MEDIA';
-    const cls = {'ALTA':'badge-alta','MEDIO-ALTA':'badge-medio-alta','MEDIA':'badge-media','MEDIO-BASSA':'badge-medio-bassa','BASSA':'badge-bassa'}[prob] || 'badge-media';
-    badge!.innerHTML = `<span class="result-badge ${cls}">📊 PROBABILITÀ: ${prob}</span>`;
-    
-    const content = document.getElementById('analysisContent');
-    content!.innerHTML = (data.analysis||'').replace(/\n/g,'<br>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
-    
-    const actions = document.getElementById('resultActions');
-    actions!.innerHTML = `
+    const clsMap = {'ALTA':'badge-alta','MEDIO-ALTA':'badge-medio-alta','MEDIA':'badge-media','MEDIO-BASSA':'badge-medio-bassa','BASSA':'badge-bassa'};
+    document.getElementById('resultBadge').innerHTML = `<span class="result-badge ${clsMap[prob] || 'badge-media'}">📊 PROBABILITÀ: ${prob}</span>`;
+    document.getElementById('analysisContent').innerHTML = (data.analysis||'').replace(/\n/g,'<br>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    document.getElementById('resultActions').innerHTML = `
         <button class="btn btn-outline" onclick="copyResults()">📋 Copia</button>
         <button class="btn btn-outline" onclick="downloadResults()">💾 Scarica .txt</button>
         <button class="btn btn-outline" onclick="generateVolantino()">📢 Genera volantino</button>
         <button class="btn btn-outline" onclick="resetUI()">🔄 Nuova analisi</button>
     `;
-    
-    // Calcolo adesione
-    const adBox = document.getElementById('adesioneBox');
-    adBox!.innerHTML = `
+    document.getElementById('adesioneBox').innerHTML = `
         <strong>📊 Calcola adesione stimata</strong><br><br>
         <input type="number" id="totaleLavoratori" placeholder="Totale lavoratori coinvolgibili" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--border);border-radius:8px;">
         <input type="number" id="adesioneStorica" placeholder="% adesione storica (es. 65)" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid var(--border);border-radius:8px;">
         <button class="btn btn-primary btn-sm" onclick="calcolaAdesione()">Calcola</button>
         <span id="risultatoAdesione" style="margin-left:12px;font-weight:600;"></span>
     `;
-    
-    rc?.scrollIntoView({ behavior:'smooth' });
+    document.getElementById('resultsCard').scrollIntoView({ behavior:'smooth' });
 }
 
 function calcolaAdesione() {
-    const totale = parseInt((document.getElementById('totaleLavoratori') as HTMLInputElement)?.value||'0');
-    const perc = parseFloat((document.getElementById('adesioneStorica') as HTMLInputElement)?.value||'0');
-    if (totale>0 && perc>0) {
-        const stima = Math.round(totale * perc / 100);
-        (document.getElementById('risultatoAdesione') as HTMLElement).textContent = `Stima: ${stima} scioperanti`;
-    }
+    const totale = parseInt(document.getElementById('totaleLavoratori')?.value||'0');
+    const perc = parseFloat(document.getElementById('adesioneStorica')?.value||'0');
+    const stima = Math.round(totale * perc / 100);
+    document.getElementById('risultatoAdesione').textContent = `Stima: ${stima} scioperanti`;
 }
 
 async function generateVolantino() {
     if (!currentAnalysis) return;
     showToast('📢 Generazione volantino...');
-    try {
-        const res = await fetch(`${API_BASE}/volantino`, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ analysis: currentAnalysis.analysis })
-        });
-        const data = await res.json();
-        document.getElementById('volantinoBox')!.innerHTML = `
-            <div class="volantino-box">
-                <strong>📢 Volantino generato:</strong><br><br>
-                ${(data.volantino||'').replace(/\n/g,'<br>')}
-            </div>
-        `;
-    } catch(e) { showToast('❌ Errore generazione volantino'); }
+    const res = await fetch(API_BASE + '/volantino', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ analysis: currentAnalysis.analysis })
+    });
+    const data = await res.json();
+    document.getElementById('volantinoBox').innerHTML = `
+        <div class="volantino-box">
+            <strong>📢 Volantino generato:</strong><br><br>
+            ${(data.volantino||'').replace(/\n/g,'<br>')}
+        </div>
+    `;
 }
 
 function copyResults() {
@@ -263,8 +253,7 @@ function downloadResults() {
     a.click();
 }
 
-// ── PROGRESS ─────────────────────────────
-function setProgress(pct: number, msg: string) {
+function setProgress(pct, msg) {
     const bar = document.getElementById('progressBar');
     const msgEl = document.getElementById('progressMessage');
     if (bar) bar.style.width = pct+'%';
@@ -278,23 +267,21 @@ function resetUI() {
     setProgress(0,'');
 }
 
-// ── ADMIN ────────────────────────────────
 function openAdminLogin() {
     const pwd = prompt('🔐 Inserisci password amministratore:');
     if (!pwd) return;
-    fetch(`${API_BASE}/admin/verify`, {
+    fetch(API_BASE + '/admin/verify', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ password: pwd })
-    }).then(r=>r.json()).then(d=>{
+    }).then(r => r.json()).then(d => {
         if (d.token) { adminToken = d.token; openAdminPanel(); }
         else showToast('❌ Password errata');
     });
 }
 
 function openAdminPanel() {
-    // Recupera impostazioni e mostra modale
-    fetch(`${API_BASE}/admin/settings`, { headers: { Authorization: `Bearer ${adminToken}` }})
-    .then(r=>r.json()).then(settings=>{
+    fetch(API_BASE + '/admin/settings', { headers: { Authorization: `Bearer ${adminToken}` }})
+    .then(r => r.json()).then(settings => {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay active';
         modal.innerHTML = `
@@ -316,25 +303,24 @@ function openAdminPanel() {
 }
 
 function saveAdminSettings() {
-    const apiKey = (document.getElementById('adminApiKey') as HTMLInputElement)?.value;
-    const prompt = (document.getElementById('adminPrompt') as HTMLTextAreaElement)?.value;
-    const password = (document.getElementById('adminNewPassword') as HTMLInputElement)?.value;
-    const body: any = { apiKey, prompt };
+    const apiKey = document.getElementById('adminApiKey')?.value;
+    const prompt = document.getElementById('adminPrompt')?.value;
+    const password = document.getElementById('adminNewPassword')?.value;
+    const body = { apiKey, prompt };
     if (password) body.password = password;
-    fetch(`${API_BASE}/admin/settings`, {
+    fetch(API_BASE + '/admin/settings', {
         method:'PUT', headers: {'Content-Type':'application/json', Authorization: `Bearer ${adminToken}`},
         body: JSON.stringify(body)
-    }).then(r=>r.json()).then(d=>{
+    }).then(r => r.json()).then(d => {
         if (d.success) { showToast('✅ Impostazioni salvate'); document.querySelector('.modal-overlay')?.remove(); }
     });
 }
 
-// ── HISTORY ──────────────────────────────
 function openHistory() {
-    fetch(`${API_BASE}/history`).then(r=>r.json()).then(records=>{
+    fetch(API_BASE + '/history').then(r => r.json()).then(records => {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay active';
-        let items = records.map((r:any) => `
+        let items = records.map(r => `
             <div class="history-item" onclick="loadHistoryItem('${r.id}')">
                 <span class="date">${r.date?.split('T')[0]}</span>
                 <span class="prob">Prob: ${r.probability}</span>
@@ -354,16 +340,16 @@ function openHistory() {
     });
 }
 
-function loadHistoryItem(id: string) {
-    fetch(`${API_BASE}/history/${id}`).then(r=>r.json()).then(data=>{
-        currentAnalysis = data;
-        displayResults({ analysis: data.text, probability: data.probability, alert: null });
+function loadHistoryItem(id) {
+    fetch(API_BASE + '/history/' + id).then(r => r.json()).then(data => {
+        currentAnalysis = { analysis: data.text, probability: data.probability, alert: null };
+        displayResults(currentAnalysis);
         document.querySelector('.modal-overlay')?.remove();
     });
 }
 
 async function exportHistory() {
-    const res = await fetch(`${API_BASE}/history/export/all`);
+    const res = await fetch(API_BASE + '/history/export/all');
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -372,13 +358,17 @@ async function exportHistory() {
     showToast('📤 Storico esportato');
 }
 
-// ── TOAST ────────────────────────────────
-function showToast(msg: string) {
-    const container = document.getElementById('toastContainer') || (()=>{
-        const c = document.createElement('div'); c.className='toast-container'; c.id='toastContainer';
-        document.body.appendChild(c); return c;
-    })();
-    const toast = document.createElement('div'); toast.className='toast'; toast.textContent = msg;
+function showToast(msg) {
+    let container = document.getElementById('toastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'toast-container';
+        container.id = 'toastContainer';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = msg;
     container.appendChild(toast);
-    setTimeout(()=>{ toast.remove(); }, 3000);
+    setTimeout(() => { toast.remove(); }, 3000);
 }
