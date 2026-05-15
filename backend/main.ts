@@ -1,5 +1,5 @@
 const API_KEY = Deno.env.get("GEMINI_API_KEY") || "";
-const MODEL = "mistralai/mistral-7b-instruct"; // gratuito su OpenRouter
+const MODEL = "meta-llama/llama-3-8b-instruct";
 
 async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
