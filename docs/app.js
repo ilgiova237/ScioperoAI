@@ -1,9 +1,13 @@
 const API_BASE = 'https://sciopero-scan-ai.ilgiova237.deno.net/api';
 let currentAnalysis = null;
 let adminToken = null;
+let additionalContextFields = [];
+let currentPreset = null;
+let presets = [];
 
 // ── INIT ──────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+    loadPresets();
     renderMainPage();
     registerServiceWorker();
     document.addEventListener('keydown', (e) => {
@@ -113,7 +117,8 @@ function analyzePastedText() {
     const text = document.getElementById('pasteTextarea')?.value?.trim();
     if (!text || text.length<20) { showToast('⚠️ Testo troppo corto'); return; }
     document.getElementById('pasteArea')?.classList.remove('active');
-    submitAnalysis(text);
+    window.__lastExtractedText = text;
+    showContextPanel();
 }
 
 // ── FILE HANDLING ─────────────────────────
@@ -160,7 +165,8 @@ async function handleFile(file) {
         }
         if (text.length < 30) { showToast('⚠️ Impossibile estrarre testo'); resetUI(); return; }
         setProgress(30, 'Testo estratto');
-        submitAnalysis(text);
+        window.__lastExtractedText = text;
+        showContextPanel();
     } catch(e) { showToast('❌ Errore: '+e.message); resetUI(); }
 }
 
@@ -385,4 +391,166 @@ function showToast(msg) {
     toast.textContent = msg;
     container.appendChild(toast);
     setTimeout(() => { toast.remove(); }, 3000);
+}
+
+// ─────────────────────────────────────────
+// GESTIONE CONTESTO E DOMANDE AGGIUNTIVE
+// ─────────────────────────────────────────
+
+async function loadPresets() {
+    try {
+        const res = await fetch('presets.json');
+        if (res.ok) {
+            presets = await res.json();
+        }
+    } catch (e) {
+        console.log('Nessun file presets.json trovato, uso preset vuoto');
+        presets = [];
+    }
+}
+
+function showContextPanel() {
+    const main = document.getElementById('mainContent');
+    if (!main) return;
+    // Rimuovi il pannello precedente se esiste
+    const oldPanel = document.getElementById('contextPanel');
+    if (oldPanel) oldPanel.remove();
+    additionalContextFields = [];
+    const panel = document.createElement('div');
+    panel.id = 'contextPanel';
+    panel.className = 'context-panel';
+    panel.innerHTML = `
+        <h3>📝 Informazioni contestuali (migliorano l'analisi)</h3>
+        <div id="presetSelector" style="margin-bottom:1rem;">
+            <label style="font-weight:600;">Preset:</label>
+            <select id="presetSelect" onchange="applyPreset()">
+                <option value="">Nessuno (campi personalizzati)</option>
+                ${presets.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+            </select>
+        </div>
+        <div id="fieldsContainer"></div>
+        <button class="add-field-btn" onclick="addCustomField()">+ Aggiungi domanda</button>
+        <div style="margin-top:1rem;">
+            <button class="btn btn-primary" onclick="confirmContext()">✅ Prosegui all'analisi</button>
+        </div>
+    `;
+    const uploadCard = document.getElementById('uploadCard');
+    if (uploadCard) {
+        uploadCard.after(panel);
+    } else {
+        main.appendChild(panel);
+    }
+    // Nascondi il pulsante di analisi principale finché non confermato il contesto
+    document.getElementById('analyzeBtn').style.display = 'none';
+    document.getElementById('progressCard').classList.remove('active');
+    document.getElementById('resultsCard').classList.remove('active');
+}
+
+function applyPreset() {
+    const select = document.getElementById('presetSelect');
+    const presetId = select.value;
+    currentPreset = presets.find(p => p.id === presetId) || null;
+    additionalContextFields = [];
+    if (currentPreset) {
+        currentPreset.questions.forEach(q => {
+            additionalContextFields.push({ question: q, answer: '' });
+        });
+    }
+    renderContextFields();
+}
+
+function addCustomField(question = '', answer = '') {
+    additionalContextFields.push({ question, answer });
+    renderContextFields();
+}
+
+function removeField(index) {
+    additionalContextFields.splice(index, 1);
+    renderContextFields();
+}
+
+function renderContextFields() {
+    const container = document.getElementById('fieldsContainer');
+    if (!container) return;
+    let html = '';
+    additionalContextFields.forEach((field, idx) => {
+        html += `
+            <div class="context-field" data-index="${idx}">
+                <label>Domanda:</label>
+                <input type="text" class="field-question" value="${escapeHtml(field.question)}" placeholder="es. Quali prof sono presenti?" onchange="updateFieldQuestion(${idx}, this.value)" />
+                <label>Risposta:</label>
+                <input type="text" class="field-answer" value="${escapeHtml(field.answer)}" placeholder="Inserisci la risposta..." oninput="updateFieldAnswer(${idx}, this.value); checkSuggestions(${idx}, this.value)" />
+                <button class="remove-field" onclick="removeField(${idx})">✕</button>
+            </div>
+            <div class="suggestions" id="suggestions-${idx}"></div>
+        `;
+    });
+    container.innerHTML = html;
+}
+
+function updateFieldQuestion(index, value) {
+    if (index >= 0 && index < additionalContextFields.length) {
+        additionalContextFields[index].question = value;
+    }
+}
+
+function updateFieldAnswer(index, value) {
+    if (index >= 0 && index < additionalContextFields.length) {
+        additionalContextFields[index].answer = value;
+    }
+}
+
+function checkSuggestions(index, value) {
+    const suggestionsDiv = document.getElementById(`suggestions-${index}`);
+    if (!suggestionsDiv) return;
+    const suggestions = [];
+    const lowerVal = value.toLowerCase();
+    if (lowerVal.includes('prof') || lowerVal.includes('docente')) {
+        suggestions.push('Quanti di loro sono di ruolo?');
+        suggestions.push('Quanti sono precari?');
+        suggestions.push('Sono iscritti al sindacato?');
+    }
+    if (lowerVal.includes('sciopero') || lowerVal.includes('astensione')) {
+        suggestions.push('La data è stata concordata con altri sindacati?');
+        suggestions.push('Qual è la durata prevista?');
+    }
+    if (lowerVal.includes('alunni') || lowerVal.includes('studenti')) {
+        suggestions.push('Quanti alunni per classe?');
+        suggestions.push('Sono coinvolti anche i genitori?');
+    }
+    if (lowerVal.includes('luogo') || lowerVal.includes('città') || lowerVal.includes('sede')) {
+        suggestions.push('È una zona con alta densità sindacale?');
+        suggestions.push('Ci sono precedenti di scioperi riusciti in quella zona?');
+    }
+    if (lowerVal.includes('precari') || lowerVal.includes('precario')) {
+        suggestions.push('Quanti anni di servizio hanno in media?');
+        suggestions.push('Hanno ricevuto minacce di ritorsioni?');
+    }
+    if (suggestions.length > 0) {
+        suggestionsDiv.innerHTML = suggestions.map(s => `<span class="suggestion-chip" onclick="addSuggestedQuestion('${escapeHtml(s)}')">${s}</span>`).join('');
+    } else {
+        suggestionsDiv.innerHTML = '';
+    }
+}
+
+function addSuggestedQuestion(question) {
+    additionalContextFields.push({ question, answer: '' });
+    renderContextFields();
+}
+
+function confirmContext() {
+    const contextString = additionalContextFields
+        .filter(f => f.question.trim() !== '' && f.answer.trim() !== '')
+        .map(f => `${f.question}: ${f.answer}`)
+        .join('\n');
+    const originalText = window.__lastExtractedText || '';
+    const fullText = originalText + '\n\n--- CONTESTO AGGIUNTIVO ---\n' + contextString;
+    const panel = document.getElementById('contextPanel');
+    if (panel) panel.remove();
+    document.getElementById('analyzeBtn').style.display = 'inline-block';
+    submitAnalysis(fullText);
+}
+
+function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
