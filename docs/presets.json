@@ -1,0 +1,38 @@
+[
+  {
+    "id": "scuola",
+    "name": "Scuola / Istruzione",
+    "questions": [
+      "Quali prof (materie) sono presenti oggi?",
+      "Numero totale di docenti in servizio",
+      "Percentuale di precari tra i docenti",
+      "Sede dell'istituto (città, regione)",
+      "Numero di alunni",
+      "Lo sciopero è stato proclamato da una sola sigla o da più sindacati?",
+      "Ci sono stati scioperi simili negli ultimi 12 mesi?",
+      "La scuola è in una zona ad alta tensione sociale?"
+    ]
+  },
+  {
+    "id": "sanita",
+    "name": "Sanità",
+    "questions": [
+      "Tipo di struttura (ospedale, ASL, clinica privata)",
+      "Numero di dipendenti coinvolti",
+      "Reparti critici interessati",
+      "Esiste un piano di emergenza per le prestazioni indispensabili?",
+      "La direzione ha già fatto proposte?"
+    ]
+  },
+  {
+    "id": "generico",
+    "name": "Generico",
+    "questions": [
+      "Data effettiva dello sciopero",
+      "Luogo (città, regione)",
+      "Numero di lavoratori coinvolti",
+      "Eventuali figure chiave (leader sindacali, delegati)",
+      "Contesto politico locale"
+    ]
+  }
+]
