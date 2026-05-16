@@ -1,13 +1,9 @@
 const API_BASE = 'https://sciopero-scan-ai.ilgiova237.deno.net/api';
 let currentAnalysis = null;
 let adminToken = null;
-let additionalContextFields = [];
-let currentPreset = null;
-let presets = [];
 
 // ── INIT ──────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-    loadPresets();
     renderMainPage();
     registerServiceWorker();
     document.addEventListener('keydown', (e) => {
@@ -117,8 +113,7 @@ function analyzePastedText() {
     const text = document.getElementById('pasteTextarea')?.value?.trim();
     if (!text || text.length<20) { showToast('⚠️ Testo troppo corto'); return; }
     document.getElementById('pasteArea')?.classList.remove('active');
-    window.__lastExtractedText = text;
-    showContextPanel();
+    submitAnalysis(text);
 }
 
 // ── FILE HANDLING ─────────────────────────
@@ -166,7 +161,7 @@ async function handleFile(file) {
         if (text.length < 30) { showToast('⚠️ Impossibile estrarre testo'); resetUI(); return; }
         setProgress(30, 'Testo estratto');
         window.__lastExtractedText = text;
-        showContextPanel();
+        showContextPanel(); // Mostra il pannello contestuale
     } catch(e) { showToast('❌ Errore: '+e.message); resetUI(); }
 }
 
@@ -298,21 +293,40 @@ function openAdminLogin() {
 }
 
 function openAdminPanel() {
-    fetch(API_BASE + '/admin/settings', { headers: { Authorization: `Bearer ${adminToken}` }})
-    .then(r => r.json()).then(settings => {
+    fetch(API_BASE + '/admin/professori', { headers: { Authorization: `Bearer ${adminToken}` }})
+    .then(r => r.json())
+    .then(professori => {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay active';
         modal.innerHTML = `
-            <div class="modal">
+            <div class="modal" style="max-width:700px;">
                 <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
                 <h2>⚙️ Impostazioni Admin</h2>
-                <label>API Key Gemini</label>
-                <input type="password" id="adminApiKey" value="${settings.apiKey||''}">
-                <label>Prompt di analisi</label>
-                <textarea id="adminPrompt">${settings.prompt||''}</textarea>
-                <label>Nuova password</label>
+                <h3>👨‍🏫 Gestione Professori</h3>
+                <div id="profList" style="max-height:300px;overflow-y:auto;margin-bottom:1rem;">
+                    ${professori.map(p => `
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <input type="text" value="${p.nome}" id="nome-${p.id}" style="width:120px;">
+                            <input type="text" value="${p.materia}" id="materia-${p.id}" style="width:100px;">
+                            <input type="text" value="${p.caratteristiche || ''}" id="car-${p.id}" style="flex:1;" placeholder="Caratteristiche">
+                            <button class="btn btn-outline btn-sm" onclick="updateProf('${p.id}')">💾</button>
+                            <button class="btn btn-outline btn-sm" onclick="deleteProf('${p.id}')">🗑️</button>
+                        </div>
+                    `).join('')}
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="newNome" placeholder="Nome" style="width:120px;">
+                    <input type="text" id="newMateria" placeholder="Materia" style="width:100px;">
+                    <input type="text" id="newCar" placeholder="Caratteristiche" style="flex:1;">
+                    <button class="btn btn-primary btn-sm" onclick="addProf()">+ Aggiungi</button>
+                </div>
+                <hr style="margin:1.5rem 0;">
+                <h3>🔑 Altre impostazioni</h3>
+                <label>API Key</label>
+                <input type="password" id="adminApiKey" value="${localStorage.getItem('api_key') || ''}">
+                <label>Nuova password admin</label>
                 <input type="password" id="adminNewPassword" placeholder="Lascia vuoto per non cambiare">
-                <button class="btn btn-primary" onclick="saveAdminSettings()" style="margin-top:1rem;">💾 Salva</button>
+                <button class="btn btn-primary" onclick="saveAdminSettings()" style="margin-top:1rem;">💾 Salva tutto</button>
             </div>
         `;
         document.body.appendChild(modal);
@@ -320,18 +334,46 @@ function openAdminPanel() {
     });
 }
 
-function saveAdminSettings() {
-    const apiKey = document.getElementById('adminApiKey')?.value;
-    const prompt = document.getElementById('adminPrompt')?.value;
-    const password = document.getElementById('adminNewPassword')?.value;
-    const body = { apiKey, prompt };
-    if (password) body.password = password;
-    fetch(API_BASE + '/admin/settings', {
-        method:'PUT', headers: {'Content-Type':'application/json', Authorization: `Bearer ${adminToken}`},
-        body: JSON.stringify(body)
-    }).then(r => r.json()).then(d => {
-        if (d.success) { showToast('✅ Impostazioni salvate'); document.querySelector('.modal-overlay')?.remove(); }
+// Funzioni admin per i professori
+async function addProf() {
+    const nome = document.getElementById('newNome')?.value;
+    const materia = document.getElementById('newMateria')?.value;
+    const caratteristiche = document.getElementById('newCar')?.value;
+    if (!nome || !materia) return alert('Nome e materia obbligatori');
+    const res = await fetch(API_BASE + '/admin/professori', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ nome, materia, caratteristiche })
     });
+    if (res.ok) {
+        showToast('✅ Professore aggiunto');
+        openAdminPanel();
+    }
+}
+
+async function updateProf(id) {
+    const nome = document.getElementById(`nome-${id}`)?.value;
+    const materia = document.getElementById(`materia-${id}`)?.value;
+    const caratteristiche = document.getElementById(`car-${id}`)?.value;
+    const res = await fetch(API_BASE + '/admin/professori/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ nome, materia, caratteristiche })
+    });
+    if (res.ok) showToast('✅ Modificato');
+}
+
+async function deleteProf(id) {
+    if (confirm('Eliminare?')) {
+        const res = await fetch(API_BASE + '/admin/professori/' + id, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${adminToken}` }
+        });
+        if (res.ok) {
+            showToast('🗑️ Eliminato');
+            openAdminPanel();
+        }
+    }
 }
 
 // ── HISTORY ──────────────────────────────
@@ -393,13 +435,14 @@ function showToast(msg) {
     setTimeout(() => { toast.remove(); }, 3000);
 }
 
-// ─────────────────────────────────────────
-// GESTIONE CONTESTO E DOMANDE AGGIUNTIVE
-// ─────────────────────────────────────────
+// ── CONTESTO E PANNELLO PROFESSORI ────────
+let additionalContextFields = [];
+let currentPreset = null;
+let presets = [];
 
 async function loadPresets() {
     try {
-        const res = await fetch('presets.json');
+        const res = await fetch('/presets.json');
         if (res.ok) {
             presets = await res.json();
         }
@@ -408,14 +451,28 @@ async function loadPresets() {
         presets = [];
     }
 }
+loadPresets();
 
-function showContextPanel() {
+async function loadProfessori() {
+    try {
+        const res = await fetch(API_BASE + '/professori');
+        if (res.ok) {
+            return await res.json();
+        }
+        return [];
+    } catch (e) {
+        return [];
+    }
+}
+
+async function showContextPanel() {
     const main = document.getElementById('mainContent');
     if (!main) return;
-    // Rimuovi il pannello precedente se esiste
     const oldPanel = document.getElementById('contextPanel');
     if (oldPanel) oldPanel.remove();
-    additionalContextFields = [];
+
+    const professori = await loadProfessori();
+
     const panel = document.createElement('div');
     panel.id = 'contextPanel';
     panel.className = 'context-panel';
@@ -428,28 +485,78 @@ function showContextPanel() {
                 ${presets.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
             </select>
         </div>
+        <h4>👨‍🏫 Professori presenti oggi</h4>
+        <div id="professoriGrid" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:1rem;">
+            ${professori.map(p => `
+                <label style="display:flex;align-items:center;gap:6px;background:var(--blue-bg);padding:6px 12px;border-radius:8px;">
+                    <input type="checkbox" class="prof-check" value="${p.id}" onchange="updateProfSelection()">
+                    <span>${p.nome} (${p.materia})</span>
+                    <small>${p.caratteristiche || ''}</small>
+                </label>
+            `).join('')}
+        </div>
         <div id="fieldsContainer"></div>
         <button class="add-field-btn" onclick="addCustomField()">+ Aggiungi domanda</button>
         <div style="margin-top:1rem;">
             <button class="btn btn-primary" onclick="confirmContext()">✅ Prosegui all'analisi</button>
         </div>
     `;
+
     const uploadCard = document.getElementById('uploadCard');
     if (uploadCard) {
         uploadCard.after(panel);
     } else {
         main.appendChild(panel);
     }
-    // Nascondi il pulsante di analisi principale finché non confermato il contesto
+
     document.getElementById('analyzeBtn').style.display = 'none';
     document.getElementById('progressCard').classList.remove('active');
     document.getElementById('resultsCard').classList.remove('active');
 }
 
+let selectedProf = [];
+
+function updateProfSelection() {
+    const checks = document.querySelectorAll('.prof-check');
+    selectedProf = [];
+    checks.forEach(cb => {
+        if (cb.checked) {
+            const id = cb.value;
+            const label = cb.closest('label');
+            const nome = label?.querySelector('span')?.textContent || '';
+            const caratteristiche = label?.querySelector('small')?.textContent || '';
+            selectedProf.push({ id, nome, caratteristiche });
+        }
+    });
+}
+
+function confirmContext() {
+    updateProfSelection();
+    const contextString = additionalContextFields
+        .filter(f => f.question.trim() !== '' && f.answer.trim() !== '')
+        .map(f => `${f.question}: ${f.answer}`)
+        .join('\n');
+
+    const profString = selectedProf.length > 0
+        ? 'Professori presenti oggi:\n' + selectedProf.map(p => `- ${p.nome}${p.caratteristiche ? ' (' + p.caratteristiche + ')' : ''}`).join('\n')
+        : '';
+
+    const originalText = window.__lastExtractedText || '';
+    const fullText = originalText + '\n\n--- CONTESTO AGGIUNTIVO ---\n' + contextString + '\n' + profString;
+
+    const panel = document.getElementById('contextPanel');
+    if (panel) panel.remove();
+
+    document.getElementById('analyzeBtn').style.display = 'inline-block';
+    submitAnalysis(fullText);
+}
+
+// Preset e campi personalizzati
 function applyPreset() {
     const select = document.getElementById('presetSelect');
     const presetId = select.value;
     currentPreset = presets.find(p => p.id === presetId) || null;
+
     additionalContextFields = [];
     if (currentPreset) {
         currentPreset.questions.forEach(q => {
@@ -472,6 +579,7 @@ function removeField(index) {
 function renderContextFields() {
     const container = document.getElementById('fieldsContainer');
     if (!container) return;
+
     let html = '';
     additionalContextFields.forEach((field, idx) => {
         html += `
@@ -503,8 +611,10 @@ function updateFieldAnswer(index, value) {
 function checkSuggestions(index, value) {
     const suggestionsDiv = document.getElementById(`suggestions-${index}`);
     if (!suggestionsDiv) return;
+
     const suggestions = [];
     const lowerVal = value.toLowerCase();
+
     if (lowerVal.includes('prof') || lowerVal.includes('docente')) {
         suggestions.push('Quanti di loro sono di ruolo?');
         suggestions.push('Quanti sono precari?');
@@ -526,8 +636,11 @@ function checkSuggestions(index, value) {
         suggestions.push('Quanti anni di servizio hanno in media?');
         suggestions.push('Hanno ricevuto minacce di ritorsioni?');
     }
+
     if (suggestions.length > 0) {
-        suggestionsDiv.innerHTML = suggestions.map(s => `<span class="suggestion-chip" onclick="addSuggestedQuestion('${escapeHtml(s)}')">${s}</span>`).join('');
+        suggestionsDiv.innerHTML = suggestions.map(s => 
+            `<span class="suggestion-chip" onclick="addSuggestedQuestion('${escapeHtml(s)}')">${s}</span>`
+        ).join('');
     } else {
         suggestionsDiv.innerHTML = '';
     }
@@ -536,19 +649,6 @@ function checkSuggestions(index, value) {
 function addSuggestedQuestion(question) {
     additionalContextFields.push({ question, answer: '' });
     renderContextFields();
-}
-
-function confirmContext() {
-    const contextString = additionalContextFields
-        .filter(f => f.question.trim() !== '' && f.answer.trim() !== '')
-        .map(f => `${f.question}: ${f.answer}`)
-        .join('\n');
-    const originalText = window.__lastExtractedText || '';
-    const fullText = originalText + '\n\n--- CONTESTO AGGIUNTIVO ---\n' + contextString;
-    const panel = document.getElementById('contextPanel');
-    if (panel) panel.remove();
-    document.getElementById('analyzeBtn').style.display = 'inline-block';
-    submitAnalysis(fullText);
 }
 
 function escapeHtml(str) {
